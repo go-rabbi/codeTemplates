@@ -23,8 +23,6 @@ using namespace __gnu_pbds;
 
 #define pi acos(-1.0)
 #define mod 1000000007
-#define INF 1e18
-#define _INF -1e18
 
 #define _fastio  ios_base:: sync_with_stdio(false); cin.tie(0); cout.tie(0);
 #define in_fre  freopen("in.txt", "r", stdin);
@@ -128,13 +126,17 @@ public:
 };
 
 //Graph Theory
-class GraphTheory_BFS_DFS{
+class GraphTheory{
 public:
-    ll nodes,edges;
-    vector<ll>graph[200005];ll vis[200005];ll cnt[200005];
+    ll nodes,edges,INF=1e18;
+    vector<ll>graph[200005],weight[200005];
+    vector<ll>d,p;
+    vector<bool> u;
+    ll vis[200005];ll cnt[200005];ll par[200005],lvl[200005],parse_table[200005][20];
     void CLR(ll n);
     bool isLeaf(ll node);
     void Connect(ll u,ll v);
+    void weighted_connect(ll u,ll v,ll w);
     void bfs(ll src);
     void dfs(ll src);
     void CountSubtreeSize(ll cur);
@@ -142,6 +144,11 @@ public:
     ll diry[5]={0,0,1,-1};
     void GirdBfs(ll i,ll j);
     void GridDfs(ll i,ll j);
+    void generate_parse_table();
+    ll lca(ll p,ll q);
+    void dijkstra(ll s);
+    void dijkstra1(ll s); 
+    vector<ll> restore_path(ll s, ll t);
 };
 //Data Structure
 class DataStructure_DSU{
@@ -164,6 +171,24 @@ public:
     ll tri[400005][30],emark[400005],cnt[400005],depth[400005];
     string s;
     void CLR(ll n);
+    void build();
+    ll Find();
+};
+class DataStructure_Trie1{
+public:
+    struct node{
+        ll cnt;
+        node* nxt[26];
+    
+        node(){
+            cnt=0;
+            for(int i=0;i<26;i++){
+                nxt[i]=nullptr;
+            }
+        }
+    };
+    string s;
+    node* root=new node();
     void build();
     ll Find();
 };
@@ -208,16 +233,7 @@ int main(){
     ll cas;
     cin>>cas;
     while(cas--){
-        ll n,m;
-        cin>>n>>m;
-        if(m%2==0) swap(n,m);
-        ll ans=(m/2)*n;
-        if(m%2){
-            ll d=n/2;
-            if(n%2) d++;
-            ans+=d;
-        }
-        cout<<ans<<en;
+        
     }
 
 
@@ -243,6 +259,7 @@ bool NumberTheory::IsPrime(ll x){
             f=false;break;
         }
     }
+    return f;
 }
 ll GetMod(ll x,ll m){
     if(x>=0) return x%m;
@@ -317,23 +334,28 @@ ll Binary_Search::Manual_lower(ll l,ll r,ll val){
 }
 
 //Graph Theory
-void GraphTheory_BFS_DFS::CLR(ll n){
+void GraphTheory::CLR(ll n){
     for(ll i=0;i<=n+1;i++){
         graph[i].clear();
+        weight[i].clear();
         vis[i]=0;
     }
     nodes=n;
+    d.assign(n+1, 1e18);
+    p.assign(n+1, -1);
+    u.assign(n+1, false);
+    INF=1e18;
 }
-bool GraphTheory_BFS_DFS::isLeaf(ll node){
+bool GraphTheory::isLeaf(ll node){
     if(graph[node].size()==1) return true;
     else return false;
 }
 
-void GraphTheory_BFS_DFS::Connect(ll u,ll v){
+void GraphTheory::Connect(ll u,ll v){
     graph[u].push_back(v);
     graph[v].push_back(u);
 }
-void GraphTheory_BFS_DFS::bfs(ll src){
+void GraphTheory::bfs(ll src){
     vis[src]=1;
     deque<ll>dq;
     dq.push_back(src);
@@ -349,7 +371,7 @@ void GraphTheory_BFS_DFS::bfs(ll src){
         }
     }
 }
-void GraphTheory_BFS_DFS::dfs(ll src){
+void GraphTheory::dfs(ll src){
     vis[src]=1;
     for(ll i=0;i<graph[src].size();i++){
         ll adj=graph[src][i];
@@ -358,7 +380,7 @@ void GraphTheory_BFS_DFS::dfs(ll src){
         }
     }
 }
-void GraphTheory_BFS_DFS::CountSubtreeSize(ll cur){
+void GraphTheory::CountSubtreeSize(ll cur){
     vis[cur]=1;
     cnt[cur]++;
     for(ll i=0;i<graph[cur].size();i++){
@@ -369,6 +391,110 @@ void GraphTheory_BFS_DFS::CountSubtreeSize(ll cur){
         }
     }
 }
+
+void GraphTheory::generate_parse_table(){
+    for(ll i=1;i<=nodes;i++){
+        parse_table[i][0]=par[i];
+    }
+    for(ll j=1;j<=20;j++){
+        for(ll i=1;i<=nodes;i++){
+            if(parse_table[i][j-1]!=-1)
+                parse_table[i][j]=parse_table[parse_table[i][j-1]][j-1];
+            else
+                parse_table[i][j]=-1;
+        }
+    }
+}
+
+ll GraphTheory::lca(ll p,ll q){
+   for(ll i=20;i>=0;i--){
+        if(lvl[p]==lvl[q]) break;
+        if(lvl[p]>lvl[q]){
+            if(lvl[p]-(1<<i)>=lvl[q]) p=parse_table[p][i];
+        }
+        else{
+            if(lvl[q]-(1<<i)>=lvl[p]) q=parse_table[q][i];
+        }
+    }
+
+    if(p==q) return p;
+
+    for(ll i=20;i>=0;i--){
+        if(parse_table[p][i]!=-1&&parse_table[p][i]!=parse_table[q][i]){
+            p=parse_table[p][i];
+            q=parse_table[q][i];
+        }
+    }
+    return parse_table[p][0];
+}
+
+void GraphTheory::weighted_connect(ll u,ll v,ll w){
+    graph[u].push_back(v);
+    graph[v].push_back(u);
+    weight[u].push_back(w);
+    weight[v].push_back(w);
+}
+
+void GraphTheory::dijkstra(ll s){
+    d[s] = 0;
+    for (ll i = 0; i < nodes; i++) {
+        ll v = -1;
+        for (ll j = 0; j < nodes; j++) {
+            if (!u[j] && (v == -1 || d[j] < d[v]))
+                v = j;
+        }
+
+        if (d[v] == INF)
+            break;
+        u[v] = true;
+        for (ll j=0;j<graph[v].size();j++) {
+            ll to = graph[v][j];
+            ll w = weight[v][j];
+
+            if (d[v] + w < d[to]) {
+                d[to] = d[v] + w;
+                p[to] = v;
+            }
+        }
+    }
+}
+
+void GraphTheory::dijkstra1(ll s) {
+    d[s] = 0;
+    using pii = pair<ll, ll>;
+    priority_queue<pii, vector<pii>, greater<pii>> q;
+    q.push({0, s});
+    while (!q.empty()) {
+        ll v = q.top().second;
+        ll d_v = q.top().first;
+        q.pop();
+        if (d_v != d[v])
+            continue;
+        for (ll j=0;j<graph[v].size();j++) {
+            ll to = graph[v][j];
+            ll w = weight[v][j];
+            if (d[v] + w < d[to]) {
+                d[to] = d[v] + w;
+                p[to] = v;
+                q.push({d[to], to});
+            }
+        }
+    }
+}
+
+vector<ll> GraphTheory::restore_path(ll s, ll t) {
+    vector<ll> path;
+
+    for (ll v = t; v != s; v = p[v])
+        path.push_back(v);
+    path.push_back(s);
+
+    reverse(path.begin(), path.end());
+    return path;
+}
+
+
+
 
 
 
@@ -443,6 +569,8 @@ void DataStructure_DSU::union_sets_considering_size_without_path_compression(ll 
 }
 
 
+
+
 /*
 *We can check whether an string is a prefix/suffix of any set of strings OR any string from a set of strings is a prefix/suffix of that string or not.
 *We can find how many times a string appears as a prefix/suffix in a set of strings.
@@ -496,6 +624,31 @@ ll DataStructure_Trie::Find(){
         }
     }
     return ans;
+}
+void DataStructure_Trie1::build(){
+    node* now=root;
+    //now->cnt++;
+    for(ll i=0;i<s.length();i++){
+        ll x=s[i]-'a';
+        if(!now->nxt[x]){
+            now->nxt[x]=new node();
+        }
+        now=now->nxt[x];
+        now->cnt++;
+    }
+}
+
+ll DataStructure_Trie1::Find(){
+    ll res=0;
+    node* now=root;
+    for(auto c:s){
+        ll x=c-'a';
+        if(!now->nxt[x]) break;
+        now=now->nxt[x];
+        res+=2*(now->cnt);
+    }
+    
+    return res;
 }
 /*
 A lot of works we can do . :p
