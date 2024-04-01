@@ -15,7 +15,7 @@ using namespace __gnu_pbds;
 
 #define debug printf("Debug\n");
 #define en '\n'
-
+#define all(x) x.begin() , x.end()
 
 #define ll long long
 #define ull unsigned long long
@@ -31,13 +31,27 @@ using namespace __gnu_pbds;
 struct Node{
     ll x,y;
 };
-struct cmp1{
+struct cmp{
     bool operator()(const Node &a,const Node &b)const{
         if(a.x==b.x) return a.y<b.y;
         else return a.x>b.x;
     }
 };
+struct custom_hash {
+    static uint64_t splitmix64(uint64_t x) {
+        // http://xorshift.di.unimi.it/splitmix64.c
+        //only submit on GNU C++20 (64)
+        x += 0x9e3779b97f4a7c15;
+        x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9;
+        x = (x ^ (x >> 27)) * 0x94d049bb133111eb;
+        return x ^ (x >> 31);
+    }
 
+    size_t operator()(uint64_t x) const {
+        static const uint64_t FIXED_RANDOM = chrono::steady_clock::now().time_since_epoch().count();
+        return splitmix64(x + FIXED_RANDOM);
+    }
+};
 //STL Algos
 template<typename T> using Pbds=tree<T,null_type,less<ll>,rb_tree_tag,tree_order_statistics_node_update>;
 
@@ -45,9 +59,10 @@ template<typename T> using Pbds=tree<T,null_type,less<ll>,rb_tree_tag,tree_order
 class NumberTheory{
 public:
     ll n;
-    ll mindiv[200000];
+    ll mindiv[200000],fact[1000006];
     bool chk[99999995];
-
+    ll dp[5005][5005];
+    
     ll GetMod(ll x,ll m);
     ll BigMod (ll b,ll p,ll m){if (p == 0) return 1;if (p%2 == 0){ll s = BigMod(b,p/2,m);return ((s%m)*(s%m))%m;}return ((b%m)*(BigMod(b,p-1,m)%m))%m;}
     ll ModInv (ll b,ll m){return BigMod(b,m-2,m);}
@@ -58,6 +73,9 @@ public:
     bool IsPrime1(ll x){return !chk[x];}
     void FactSieve(ll x);
     vector<ll> getFactorization(ll x);
+    ll comb(ll n,ll r);
+    void gen_fact(ll n){fact[0]=1;for(ll i=1;i<=n;i++){fact[i]=fact[i-1]*i;fact[i]%=mod;}}
+    ll get_comb(ll n,ll r){ll res=fact[n];res*=ModInv(fact[r],mod);res%=mod;res*=ModInv(fact[n-r],mod);res%=mod;return res;}
 };
 //Geometry
 class Geometry{
@@ -128,6 +146,10 @@ public:
 //Graph Theory
 class GraphTheory{
 public:
+    struct Edge {
+        ll a, b, cost;
+    };
+    vector<Edge>allEdges;
     ll nodes,edges,INF=1e18;
     vector<ll>graph[200005],weight[200005];
     vector<ll>d,p;
@@ -147,8 +169,22 @@ public:
     void generate_parse_table();
     ll lca(ll p,ll q);
     void dijkstra(ll s);
-    void dijkstra1(ll s); 
+    void dijkstra1(ll s);
+    void BellManFord(ll s);
+    vector<ll> FindNegativeCycle(ll s);
+    bool SPFA(ll s); 
     vector<ll> restore_path(ll s, ll t);
+    
+    vector<bool> visited;
+    vector<ll> tin, low;
+    vector<pair<ll,ll>>bridges;
+    ll timer = 0;
+    void find_bridges(ll n);
+    void dfs_time(ll v, ll p);
+    
+    vector<ll>articulation_points;
+    void find_Articulation_Point(ll n);
+    void dfs_time1(ll v, ll p);
 };
 //Data Structure
 class DataStructure_DSU{
@@ -210,20 +246,32 @@ public:
 
 };
 
-vector<ll>v;
-deque<ll>dq;
-stack<ll>stk;
-map<ll,ll>mp;
-unordered_map<ll,ll>ump;
-set<ll>st;
-multiset<ll>mst;
-unordered_set<ll>ust;
-unordered_multiset<ll>umst;
+class Hashing{
+public:
+    string s;
+    ll n;
+    char a[500005];
+    ull forwdhash[500005],revhash[500005];
+    ull po[500005],revpo[500005];
+    void build();
+    bool isPlain(ll l,ll r);
+};
+
+class Miscellaneous{
+public:
+    ll lis(vector<ll> const& a);//nlog(n)
+    bool issubsequence(string& s1, string& s2);//O(max(l1,l2))
+};
+
+/*Containers*/
 priority_queue<ll,deque<ll>,greater<ll>>pq;
-set<Node,cmp1>st1;
-map<Node,ll,cmp1>mp1;
-priority_queue<Node,deque<Node>,cmp1>pq1;
+set<Node,cmp>st1;
+map<Node,ll,cmp>mp1;
+priority_queue<Node,deque<Node>,cmp>pq1;
+unordered_map<ll,ll,custom_hash>ump1;
+unordered_set<ll,ll,custom_hash>ust1;
 Pbds<ll>ost;
+
 
 
 
@@ -287,6 +335,16 @@ vector<ll> NumberTheory::getFactorization(ll x){
         x = x / mindiv[x];
     }
     return ret;
+}
+
+ll NumberTheory::comb(ll n,ll r){
+    if(n<0 or r<0) return 0;
+    if(dp[n][r]!=-1) return dp[n][r];
+    if(n<r) return dp[n][r]=0;
+    if(r == 0) return dp[n][r]=1;
+    if(r == 1) return dp[n][r]=n;
+    if(n == 1)return dp[n][r]=1;
+    return dp[n][r]=comb(n-1,r-1)+comb(n-1,r);
 }
 
 //Bitwise operations
@@ -436,6 +494,7 @@ void GraphTheory::weighted_connect(ll u,ll v,ll w){
 }
 
 void GraphTheory::dijkstra(ll s){
+    //n^2+m
     d[s] = 0;
     for (ll i = 0; i < nodes; i++) {
         ll v = -1;
@@ -460,6 +519,7 @@ void GraphTheory::dijkstra(ll s){
 }
 
 void GraphTheory::dijkstra1(ll s) {
+    //nlong+m
     d[s] = 0;
     using pii = pair<ll, ll>;
     priority_queue<pii, vector<pii>, greater<pii>> q;
@@ -482,8 +542,103 @@ void GraphTheory::dijkstra1(ll s) {
     }
 }
 
+void GraphTheory::BellManFord(ll s){
+    //n*m
+    //works for negative weight edge
+    //no negative cycle
+    d[s] = 0;
+    for (;;) {
+        bool any = false;
+        for (auto e : allEdges)
+            if (d[e.a] < INF)
+                if (d[e.b] > d[e.a] + e.cost) {
+                    d[e.b] = d[e.a] + e.cost;
+                    p[e.b] = e.a;
+                    any = true;
+                }
+        if (!any)
+            break;
+    }
+}
+
+vector<ll> GraphTheory::FindNegativeCycle(ll s){
+    //n*m
+    //works for negative weight edge
+    //negative cycle detection
+    d[s] = 0;
+    ll x;
+    for (ll i = 0; i < nodes; ++i) {
+        x = -1;
+        for (auto e : allEdges)
+            if (d[e.a] < INF)
+                if (d[e.b] > d[e.a] + e.cost) {
+                    d[e.b] = max(-INF, d[e.a] + e.cost);
+                    p[e.b] = e.a;
+                    x = e.b;
+                }
+    }
+
+    vector<ll> path;
+    if (x == -1){
+        cout << "No negative cycle from " << s;
+        return path;
+    }
+    else {
+        ll y = x;
+        for (ll i = 0; i < nodes; ++i)
+            y = p[y];
+        for (ll cur = y;; cur = p[cur]) {
+            path.push_back(cur);
+            if (cur == y && path.size() > 1)
+                break;
+        }
+        reverse(path.begin(), path.end());
+
+        cout << "Negative cycle: ";
+        return path;
+    }
+}
+
+bool GraphTheory::SPFA(ll s){
+    //shortest path faster algorithm
+    //n*m
+    //if there is negative cycle that can be detected otherwise single source shortest path
+    vector<ll> cnt(nodes+1, 0);
+    vector<bool> inqueue(nodes+1, false);
+    queue<ll> q;
+
+    d[s] = 0;
+    q.push(s);
+    inqueue[s] = true;
+    while (!q.empty()) {
+        ll v = q.front();
+        q.pop();
+        inqueue[v] = false;
+
+        for (ll i=0;i<graph[v].size();i++) {
+            ll to = graph[v][i];
+            ll w = weight[v][i];
+            if (d[v] + w < d[to]) {
+                d[to] = d[v] + w;
+                if (!inqueue[to]) {
+                    q.push(to);
+                    inqueue[to] = true;
+                    cnt[to]++;
+                    if (cnt[to] > nodes)
+                        return false;  // negative cycle
+                }
+            }
+        }
+    }
+    return true;
+
+}
+
+
+
 vector<ll> GraphTheory::restore_path(ll s, ll t) {
     vector<ll> path;
+    if(d[t]==INF) return path;
 
     for (ll v = t; v != s; v = p[v])
         path.push_back(v);
@@ -493,6 +648,67 @@ vector<ll> GraphTheory::restore_path(ll s, ll t) {
     return path;
 }
 
+
+
+void GraphTheory::find_bridges(ll n) {
+    //O(n+m) finding all bridges together
+    timer = 0;
+    visited.assign(n, false);
+    tin.assign(n, -1);
+    low.assign(n, -1);
+    for (ll i = 0; i < n; ++i) {
+        if (!visited[i])
+            dfs_time(i,-1);
+    }
+}
+
+void GraphTheory::dfs_time(ll v, ll p) {
+    visited[v] = true;
+    tin[v] = low[v] = timer++;
+    for (ll to : graph[v]) {
+        if (to == p) continue;
+        if (visited[to]) {
+            low[v] = min(low[v], tin[to]);
+        } else {
+            dfs_time(to, v);
+            low[v] = min(low[v], low[to]);
+            if (low[to] > tin[v])
+                bridges.emplace_back(make_pair(v,to));
+        }
+    }
+}
+
+void GraphTheory::find_Articulation_Point(ll n) {
+    //O(n+m)
+    timer = 0;
+    visited.assign(n, false);
+    tin.assign(n, -1);
+    low.assign(n, -1);
+    for (ll i = 0; i < n; ++i) {
+        if (!visited[i])
+            dfs_time1 (i,-1);
+    }
+}
+
+void GraphTheory::dfs_time1(ll v, ll p) {
+    visited[v] = true;
+    tin[v] = low[v] = timer++;
+    ll children=0;
+    for (ll to : graph[v]) {
+        if (to == p) continue;
+        if (visited[to]) {
+            low[v] = min(low[v], tin[to]);
+        } else {
+            dfs_time1(to, v);
+            low[v] = min(low[v], low[to]);
+            if (low[to] >= tin[v] && p!=-1)
+                articulation_points.emplace_back(v);
+            ++children;
+        }
+    }
+    if(p == -1 && children > 1)
+        articulation_points.emplace_back(v);
+}
 
 
 
@@ -670,6 +886,7 @@ void DataStructure_Segment_Tree::build(ll node,ll b,ll e){
     return;
 
 }
+
 void DataStructure_Segment_Tree::up(ll node,ll b,ll e,ll p){
      if(b==e){
         if(b==p)
@@ -705,6 +922,7 @@ void DataStructure_Segment_Tree::up1(ll node,ll b,ll e,ll l,ll r){
     up1(left,b,mid,l,r);
     up1(right,mid+1,e,l,r);
 }
+
 void DataStructure_Segment_Tree::query(ll node,ll b,ll e,ll p){
     if(b==e){
         if(b==p)
@@ -724,6 +942,164 @@ void DataStructure_Segment_Tree::query(ll node,ll b,ll e,ll p){
 }
 //void query(ll node,ll b,ll e,ll l,ll r);
 
+/*
+struct Node{
+    ll x,y,val;
+    bool f;
+};
+void build1(ll node,ll b,ll e){
+    if(b==e){
+        segtree[node].val=a[b];
+        segtree[node].f=true;
+        segtree[node].x=0;
+        return;
+    }
+    ll mid=(b+e)/2;
+    ll left=2*node;
+    ll right=left+1;
+    segtree[node].val=0;
+    segtree[node].x=0;
+    segtree[node].f=false;
+    build1(left,b,mid);
+    build1(right,mid+1,e);
+    
+    return;
+
+}
+void up1(ll node,ll b,ll e,ll l,ll r,ll va){
+    if(b==e){
+        if(b>=l&&e<=r)
+            segtree[node].x+=va;
+            segtree[node].f=true;
+        return;
+    }
+    if(b>r||e<l) return;
+
+    ll mid=(b+e)/2;
+    ll left=2*node;
+    ll right=left+1;
+
+    if(segtree[node].f){
+        segtree[left].f=true;
+        segtree[left].x+=segtree[node].x;
+        segtree[right].f=true;
+        segtree[right].x+=segtree[node].x;
+
+        segtree[node].x=0;
+        segtree[node].f=false;
+    }
+
+    if(b>=l&&e<=r){
+        segtree[node].x+=va;
+        segtree[node].f=true;
+        return;
+    }
+
+    
+    up1(left,b,mid,l,r,va);
+    up1(right,mid+1,e,l,r,va);
+}
+
+void query(ll node,ll b,ll e,ll p){
+    if(b==e){
+        if(b==p)
+            cur=segtree[node].val+segtree[node].x;
+        return;
+    }
+    if(b>p||e<p) return;
+
+    ll mid=(b+e)/2;
+    ll left=2*node;
+    ll right=left+1;
+
+    if(segtree[node].f){
+        segtree[left].f=true;
+        segtree[left].x+=segtree[node].x;
+        segtree[right].f=true;
+        segtree[right].x+=segtree[node].x;
+
+        segtree[node].x=0;
+        segtree[node].f=false;
+    }
+
+    
+    query(left,b,mid,p);
+    query(right,mid+1,e,p);
+    return;
+}
+*/
+//Hashing
+void  Hashing::build(){
+    ull p=1,b=97;
+    forwdhash[0]=0;
+    for(ll i=1;i<=n;i++){
+        forwdhash[i]=forwdhash[i-1]+a[i]*p;
+        po[i]=p;
+        p*=b;
+    }
+
+    p=1;
+    revhash[n+1]=0;
+    for(ll i=n;i>=1;i--){
+        revhash[i]=revhash[i+1]+a[i]*p;
+        revpo[i]=p;
+        p*=b;
+    }
+
+}
+
+bool Hashing::isPlain(ll l,ll r){
+    ull x=forwdhash[r]-forwdhash[l-1];
+    ull y=revhash[l]-revhash[r+1];
+    ull rpo=n-r+1;
+    ull lpo=l;
+    if(lpo==rpo){
+        if(x==y) return true;
+        else return false;
+    }
+    else if(lpo>rpo){
+        ull d=lpo-rpo;
+        if(x==y*po[d+1]) return true;
+        else return false;
+    }
+    else{
+        ull d=rpo-lpo;
+        if(x*po[d+1]==y) return true;
+        else return false;
+    }
+
+}
+
+ll Miscellaneous::lis(vector<ll> const& a) {
+    //nlog(n)
+    ll n = a.size();
+    const ll INF = 1e9;
+    vector<ll> d(n+1, INF);
+    d[0] = -INF;
+    for (ll i = 0; i < n; i++) {
+        ll l = upper_bound(d.begin(), d.end(), a[i]) - d.begin();
+        if (d[l-1] < a[i] && a[i] < d[l])
+            d[l] = a[i];
+    }
+    ll ans = 0;
+    for (ll l = 0; l <= n; l++) {
+        if (d[l] < INF)
+            ans = l;
+    }
+    return ans;
+}
+
+bool Miscellaneous::issubsequence(string& s1, string& s2)
+{   //finds if s1 is a subsec of s2 or not
+    ll n = s1.length(), m = s2.length();
+    ll i = 0, j = 0;
+    while (i < n && j < m) {
+        if (s1[i] == s2[j])
+            i++;
+        j++;
+    }
+    return i == n;
+}
 dob Geometry::SQR(dob x){return x*x;}
 dob Geometry::DOT(dob x1,dob y1,dob x2,dob y2){ return x1*x2+y1*y2;}
 dob Geometry::CROSS(dob x1,dob y1,dob x2,dob y2){ return x1*y2-x2*y1;}
